@@ -49,6 +49,7 @@ function set_cookie()
     })
 end
 
+
 local user = get_user()
 
 if user then
