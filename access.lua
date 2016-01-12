@@ -1,5 +1,3 @@
-require "config"
-
 local cookie = ngx.var.cookie_auth
 local hmac = ""
 local timestamp = ""
@@ -27,21 +25,23 @@ end
 
 
 
-ip_addr = split(ngx.var.remote_addr , ".")
-
-for i = 1, #ip_white_list do
-    if ngx.var.remote_addr == ip_white_list[i] then
-        return
-    end
-    ip_remote_addr = split (ip_white_list[i],".")
-    if ip_remote_addr[1] == ip_addr[1] and
-       ip_remote_addr[2] == ip_addr[2] and
-       ip_remote_addr[3] == ip_addr[3] and
-       ip_remote_addr[4] == ip_addr[4] then
-        return
-    end
-end
-
+--ngx.log(ngx.INFO, ip_white_list == nil)
+--
+--ip_addr = split(ngx.var.remote_addr , ".")
+--
+--for i = 1, #ip_white_list do
+--    if ngx.var.remote_addr == ip_white_list[i] then
+--        return
+--    end
+--    ip_remote_addr = split (ip_white_list[i],".")
+--    if ip_remote_addr[1] == ip_addr[1] and
+--       ip_remote_addr[2] == ip_addr[2] and
+--       ip_remote_addr[3] == ip_addr[3] and
+--       ip_remote_addr[4] == ip_addr[4] then
+--        return
+--    end
+--end
+--
 
 if ngx.var.uri == "/auth/" then
     return

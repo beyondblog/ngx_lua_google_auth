@@ -1,5 +1,5 @@
-require "config"
-require "gauth"
+require 'config'
+gauth = require 'gauth'
 
 headers = ngx.req.get_headers();
 
@@ -23,6 +23,7 @@ function get_user()
     local user = auth:sub(0, divider - 1)
     local pass = auth:sub(divider + 1)
 
+	ngx.log(ngx.INFO, "init success")
     if users[user] and gauth.Check(users[user], pass) then
             return user
     end

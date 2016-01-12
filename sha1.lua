@@ -1,19 +1,14 @@
---
--- Modified by Zyxwvu<imzyxwvu@gmail.com>
---
--- This is not the orignal version. I replaced the bit-op functions written in pure Lua
--- with the bit32 library of Lua 5.2 for performance.
---
--- For the orignal version, see:
--- https://github.com/kikito/sha.lua
---
-
 local sha1 = {
+  _VERSION     = "sha.lua 0.5.0",
+  _URL         = "https://github.com/kikito/sha.lua",
+  _DESCRIPTION = [[
+   SHA-1 secure hash computation, and HMAC-SHA1 signature computation in Lua (5.1)
+   Based on code originally by Jeffrey Friedl (http://regex.info/blog/lua/sha1)
+   And modified by Eike Decker - (http://cube3d.de/uploads/Main/sha1.txt)
+  ]],
   _LICENSE = [[
     MIT LICENSE
-
     Copyright (c) 2013 Enrique Garc¨ªa Cota + Eike Decker + Jeffrey Friedl
-
     Permission is hereby granted, free of charge, to any person obtaining a
     copy of this software and associated documentation files (the
     "Software"), to deal in the Software without restriction, including
@@ -21,10 +16,8 @@ local sha1 = {
     distribute, sublicense, and/or sell copies of the Software, and to
     permit persons to whom the Software is furnished to do so, subject to
     the following conditions:
-
     The above copyright notice and this permission notice shall be included
     in all copies or substantial portions of the Software.
-
     THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
     OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
     MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
@@ -36,6 +29,9 @@ local sha1 = {
 }
 
 -----------------------------------------------------------------------------------
+
+-- loading this file (takes a while but grants a boost of factor 13)
+local PRELOAD_CACHE = true
 
 local BLOCK_SIZE = 64 -- 512 bits
 
@@ -57,17 +53,101 @@ local function w32_rot(bits,a)
   return a+b*b2*(2^(bits))
 end
 
+-- caching function for functions that accept 2 arguments, both of values between
+-- 0 and 255. The function to be cached is passed, all values are calculated
+-- during loading and a function is returned that returns the cached values (only)
+local function cache2arg(fn)
+  if not PRELOAD_CACHE then return fn end
+  local lut = {}
+  for i=0,0xffff do
+    local a,b = floor(i/0x100),i%0x100
+    lut[i] = fn(a,b)
+  end
+  return function(a,b)
+    return lut[a*0x100+b]
+  end
+end
+
+-- splits an 8-bit number into 8 bits, returning all 8 bits as booleans
+local function byte_to_bits(b)
+  local b = function(n)
+    local b = floor(b/n)
+    return b%2==1
+  end
+  return b(1),b(2),b(4),b(8),b(16),b(32),b(64),b(128)
+end
+
+-- builds an 8bit number from 8 booleans
+local function bits_to_byte(a,b,c,d,e,f,g,h)
+  local function n(b,x) return b and x or 0 end
+  return n(a,1)+n(b,2)+n(c,4)+n(d,8)+n(e,16)+n(f,32)+n(g,64)+n(h,128)
+end
+
+-- bitwise "and" function for 2 8bit number
+local band = cache2arg (function(a,b)
+  local A,B,C,D,E,F,G,H = byte_to_bits(b)
+  local a,b,c,d,e,f,g,h = byte_to_bits(a)
+  return bits_to_byte(
+    A and a, B and b, C and c, D and d,
+    E and e, F and f, G and g, H and h)
+end)
+
+-- bitwise "or" function for 2 8bit numbers
+local bor = cache2arg(function(a,b)
+  local A,B,C,D,E,F,G,H = byte_to_bits(b)
+  local a,b,c,d,e,f,g,h = byte_to_bits(a)
+  return bits_to_byte(
+    A or a, B or b, C or c, D or d,
+    E or e, F or f, G or g, H or h)
+end)
+
+-- bitwise "xor" function for 2 8bit numbers
+local bxor = cache2arg(function(a,b)
+  local A,B,C,D,E,F,G,H = byte_to_bits(b)
+  local a,b,c,d,e,f,g,h = byte_to_bits(a)
+  return bits_to_byte(
+    A ~= a, B ~= b, C ~= c, D ~= d,
+    E ~= e, F ~= f, G ~= g, H ~= h)
+end)
+
 -- bitwise complement for one 8bit number
 local function bnot(x)
   return 255-(x % 256)
 end
 
+-- creates a function to combine to 32bit numbers using an 8bit combination function
+local function w32_comb(fn)
+  return function(a,b)
+    local aa,ab,ac,ad = w32_to_bytes(a)
+    local ba,bb,bc,bd = w32_to_bytes(b)
+    return bytes_to_w32(fn(aa,ba),fn(ab,bb),fn(ac,bc),fn(ad,bd))
+  end
+end
+
 -- create functions for and, xor and or, all for 2 32bit numbers
-local w32_and = bit32.band
-local w32_xor = bit32.bxor
-local w32_or = bit32.bor
-local w32_xor_n = bit32.bxor
-local w32_or3 = bit32.bor
+local w32_and = w32_comb(band)
+local w32_xor = w32_comb(bxor)
+local w32_or = w32_comb(bor)
+
+-- xor function that may receive a variable number of arguments
+local function w32_xor_n(a,...)
+  local aa,ab,ac,ad = w32_to_bytes(a)
+  for i=1,select('#',...) do
+    local ba,bb,bc,bd = w32_to_bytes(select(i,...))
+    aa,ab,ac,ad = bxor(aa,ba),bxor(ab,bb),bxor(ac,bc),bxor(ad,bd)
+  end
+  return bytes_to_w32(aa,ab,ac,ad)
+end
+
+-- combining 3 32bit numbers through binary "or" operation
+local function w32_or3(a,b,c)
+  local aa,ab,ac,ad = w32_to_bytes(a)
+  local ba,bb,bc,bd = w32_to_bytes(b)
+  local ca,cb,cc,cd = w32_to_bytes(c)
+  return bytes_to_w32(
+    bor(aa,bor(ba,ca)), bor(ab,bor(bb,cb)), bor(ac,bor(bc,cc)), bor(ad,bor(bd,cd))
+  )
+end
 
 -- binary complement for 32bit numbers
 local function w32_not(a)
@@ -89,7 +169,7 @@ local function w32_to_hexstring(w) return format("%08x",w) end
 
 local function hex_to_binary(hex)
   return hex:gsub('..', function(hexval)
-    return char(tonumber(hexval, 16))
+    return string.char(tonumber(hexval, 16))
   end)
 end
 
@@ -98,8 +178,8 @@ end
 local xor_with_0x5c = {}
 local xor_with_0x36 = {}
 for i=0,0xff do
-  xor_with_0x5c[char(i)] = char(w32_xor(i,0x5c))
-  xor_with_0x36[char(i)] = char(w32_xor(i,0x36))
+  xor_with_0x5c[char(i)] = char(bxor(i,0x5c))
+  xor_with_0x36[char(i)] = char(bxor(i,0x36))
 end
 
 -----------------------------------------------------------------------------
@@ -198,8 +278,8 @@ function sha1.hmac(key, text)
     key = sha1.binary(key)
   end
 
-  local key_xord_with_0x36 = key:gsub('.', xor_with_0x36) .. rep(char(0x36), BLOCK_SIZE - #key)
-  local key_xord_with_0x5c = key:gsub('.', xor_with_0x5c) .. rep(char(0x5c), BLOCK_SIZE - #key)
+  local key_xord_with_0x36 = key:gsub('.', xor_with_0x36) .. string.rep(string.char(0x36), BLOCK_SIZE - #key)
+  local key_xord_with_0x5c = key:gsub('.', xor_with_0x5c) .. string.rep(string.char(0x5c), BLOCK_SIZE - #key)
 
   return sha1.sha1(key_xord_with_0x5c .. sha1.binary(key_xord_with_0x36 .. text))
 end
