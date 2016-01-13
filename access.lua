@@ -15,7 +15,6 @@ function getClientIp()
 	return IP
 end
 
-
 function whiteip()
 	if next(ip_white_list) ~= nil then
 		for _,ip in pairs(ip_white_list) do
@@ -31,9 +30,10 @@ if whiteip() then
 	return
 end
 
-
-if ngx.var.uri == "/auth/" then
-	return
+if ngx.var.uri == auth_url then
+	if authorization() then
+		return
+	end
 end
 
 -- Check that the cookie exists.
@@ -50,5 +50,5 @@ if cookie ~= nil and cookie:find(":") ~= nil then -- If there's a cookie, split 
 end
 
 -- Internally rewrite the URL so that we serve
--- /auth/ if there's no valid token.
-ngx.exec("/auth/")
+-- /auth_url/ if there's no valid token.
+ngx.exec(auth_url)
