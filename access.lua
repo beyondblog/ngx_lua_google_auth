@@ -15,6 +15,21 @@ function getClientIp()
 	return IP
 end
 
+function whiteHost()
+	if next(host_white_list) ~= nil then
+		for _, host in pairs(host_white_list) do
+			if ngx.var.host ==  host then
+				return true
+			end
+		end
+	end
+	return false
+end
+
+if whiteHost() then
+	return
+end
+
 if ngx.var.uri == auth_url then
 	if authorization() then
 		return
