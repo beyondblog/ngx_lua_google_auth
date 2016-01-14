@@ -15,21 +15,6 @@ function getClientIp()
 	return IP
 end
 
-function whiteip()
-	if next(ip_white_list) ~= nil then
-		for _,ip in pairs(ip_white_list) do
-			if getClientIp() == ip then
-				return true
-			end
-		end
-	end
-	return false
-end
-
-if whiteip() then
-	return
-end
-
 if ngx.var.uri == auth_url then
 	if authorization() then
 		return
